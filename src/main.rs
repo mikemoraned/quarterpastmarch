@@ -96,7 +96,7 @@ fn main() -> std::io::Result<()> {
 
     let mut sitemap_file = fs::File::create("public/sitemap.txt")?;
     for sitemap_url in sitemap_urls {
-        sitemap_file.write(format!("{}\n", sitemap_url).as_bytes())?;
+        sitemap_file.write_all(format!("{}\n", sitemap_url).as_bytes())?;
     }
 
     Ok(())
