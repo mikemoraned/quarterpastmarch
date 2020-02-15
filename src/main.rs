@@ -22,15 +22,13 @@ fn main() -> std::io::Result<()> {
 
     let mut assignments = assign_shortcut_to_date(start_year, num_years, offsets);
 
-    let extract_date: fn(&(Date<Utc>, String)) -> Date<Utc> = |e| e.0;
-
     assignments.sort_by_key(extract_date);
 
     let start_date = Utc.ymd(start_year, 1, 1);
     let max_date = Utc.ymd(start_year + num_years, 1, 1) - Duration::days(1);
 
     let closest_shortcut_for_dates =
-        find_closest_shortcut(&mut assignments, start_date, max_date, extract_date);
+        find_closest_shortcut(&assignments, start_date, max_date, extract_date);
     let sitemap_urls = render_pages(closest_shortcut_for_dates)?;
 
     generate_sitemap(sitemap_urls)?;
@@ -38,11 +36,17 @@ fn main() -> std::io::Result<()> {
     Ok(())
 }
 
+type ShortcutAssignment = (Date<Utc>, String);
+
+fn extract_date(a: &ShortcutAssignment) -> Date<Utc> {
+    a.0
+}
+
 fn assign_shortcut_to_date(
     start_year: i32,
     num_years: i32,
     offsets: [(f32, &str); 2],
-) -> Vec<(Date<Utc>, String)> {
+) -> Vec<ShortcutAssignment> {
     let mut assignments = Vec::new();
     for year_offset in 0..num_years {
         let year = start_year + year_offset;
@@ -79,11 +83,11 @@ fn assign_shortcut_to_date(
 }
 
 fn find_closest_shortcut(
-    assignments: &Vec<(Date<Utc>, String)>,
+    assignments: &[(Date<Utc>, String)],
     start_date: Date<Utc>,
     max_date: Date<Utc>,
-    extract_date: fn(&(Date<Utc>, String)) -> Date<Utc>,
-) -> Vec<(Date<Utc>, (Date<Utc>, String))> {
+    extract_date: fn(&ShortcutAssignment) -> Date<Utc>,
+) -> Vec<(Date<Utc>, ShortcutAssignment)> {
     let mut closest_shortcut_for_dates = Vec::new();
     for date in date_range(start_date, max_date) {
         let closest = match assignments.binary_search_by_key(&date, extract_date) {
@@ -103,7 +107,7 @@ fn find_closest_shortcut(
 }
 
 fn render_pages(
-    closest_shortcut_for_dates: Vec<(Date<Utc>, (Date<Utc>, String))>,
+    closest_shortcut_for_dates: Vec<(Date<Utc>, ShortcutAssignment)>,
 ) -> std::io::Result<Vec<String>> {
     let mut sitemap_urls = Vec::new();
     for (date, closest) in closest_shortcut_for_dates.iter() {
