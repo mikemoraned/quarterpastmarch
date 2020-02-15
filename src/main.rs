@@ -17,7 +17,7 @@ struct DateTemplate<'a> {
 
 fn main() -> std::io::Result<()> {
     let start_year: i32 = 2020;
-    let num_years: i32 = 1;
+    let num_years: i32 = 10;
     let offsets = [0.25, 0.5];
     let offset_names = ["quarter past", "half past"];
     let num_months: u32 = 12;
