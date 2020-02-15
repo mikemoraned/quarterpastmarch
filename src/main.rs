@@ -1,9 +1,11 @@
 extern crate askama;
 extern crate chrono;
+extern crate itertools;
 
 use askama::Template;
 use chrono::prelude::*;
 use chrono::Duration;
+use itertools::Itertools;
 use std::fs;
 use std::io::prelude::*;
 
@@ -20,15 +22,13 @@ fn main() -> std::io::Result<()> {
     let num_years: i32 = 10;
     let offsets = [(0.25, "quarter past"), (0.5, "half past")];
 
-    let mut assignments = assign_shortcut_to_date(start_year, num_years, offsets);
-
-    assignments.sort_by_key(extract_date);
+    let assignments = assign_shortcut_to_date(start_year, num_years, offsets);
 
     let start_date = Utc.ymd(start_year, 1, 1);
     let max_date = Utc.ymd(start_year + num_years, 1, 1) - Duration::days(1);
 
     let closest_shortcut_for_dates =
-        find_closest_shortcut(&assignments, start_date, max_date, extract_date);
+        find_closest_shortcut_in_each_year(&assignments, start_date, max_date);
     let sitemap_urls = render_pages(closest_shortcut_for_dates)?;
 
     generate_sitemap(sitemap_urls)?;
@@ -37,10 +37,6 @@ fn main() -> std::io::Result<()> {
 }
 
 type ShortcutAssignment = (Date<Utc>, String);
-
-fn extract_date(a: &ShortcutAssignment) -> Date<Utc> {
-    a.0
-}
 
 fn assign_shortcut_to_date(
     start_year: i32,
@@ -79,18 +75,41 @@ fn assign_shortcut_to_date(
             }
         }
     }
+    assignments.sort_by_key(|a| a.0);
     assignments
 }
 
-fn find_closest_shortcut(
-    assignments: &[(Date<Utc>, String)],
+fn find_closest_shortcut_in_each_year(
+    assignments: &[ShortcutAssignment],
     start_date: Date<Utc>,
     max_date: Date<Utc>,
-    extract_date: fn(&ShortcutAssignment) -> Date<Utc>,
 ) -> Vec<(Date<Utc>, ShortcutAssignment)> {
     let mut closest_shortcut_for_dates = Vec::new();
-    for date in date_range(start_date, max_date) {
-        let closest = match assignments.binary_search_by_key(&date, extract_date) {
+    for (year, dates) in date_range(start_date, max_date)
+        .into_iter()
+        .group_by(|d| d.year())
+        .into_iter()
+    {
+        let year_assignments = assignments
+            .iter()
+            .filter(|a| a.0.year() == year)
+            .collect::<Vec<&ShortcutAssignment>>();
+        find_closest_shortcut(
+            &year_assignments,
+            &dates.collect::<Vec<Date<Utc>>>(),
+            &mut closest_shortcut_for_dates,
+        );
+    }
+    closest_shortcut_for_dates
+}
+
+fn find_closest_shortcut(
+    assignments: &[&ShortcutAssignment],
+    dates: &[Date<Utc>],
+    closest_shortcut_for_dates: &mut Vec<(Date<Utc>, ShortcutAssignment)>,
+) {
+    for date in dates {
+        let closest = match assignments.binary_search_by_key(date, |a| a.0) {
             Ok(index) => assignments[index].clone(),
             Err(index) => {
                 if index < assignments.len() {
@@ -101,9 +120,8 @@ fn find_closest_shortcut(
             }
         };
         println!("{} -> {:?}", date, closest);
-        closest_shortcut_for_dates.push((date, closest));
+        closest_shortcut_for_dates.push((*date, closest));
     }
-    closest_shortcut_for_dates
 }
 
 fn render_pages(
