@@ -57,6 +57,9 @@ fn main() -> std::io::Result<()> {
     }
 
     assignments.sort_by_key(|e| e.0);
+
+    let mut sitemap_urls = Vec::new();
+
     let start_date = Utc.ymd(start_year, 1, 1);
     let max_date = Utc.ymd(start_year + num_years, 1, 1) - Duration::days(1);
     let mut current_date = start_date;
@@ -83,7 +86,17 @@ fn main() -> std::io::Result<()> {
         let path = format!("{}/index.html", &dir_name);
         let mut file = fs::File::create(&path)?;
         file.write_all(rendered.as_bytes())?;
+
+        sitemap_urls.push(format!(
+            "https://quarterpastmarch.houseofmoran.io/{}/",
+            current_date.format("%Y-%m-%d")
+        ));
         current_date = current_date + Duration::days(1);
+    }
+
+    let mut sitemap_file = fs::File::create("public/sitemap.txt")?;
+    for sitemap_url in sitemap_urls {
+        sitemap_file.write(format!("{}\n", sitemap_url).as_bytes())?;
     }
 
     Ok(())
