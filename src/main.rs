@@ -1,9 +1,21 @@
+extern crate askama;
 extern crate chrono;
 
+use askama::Template;
 use chrono::prelude::*;
 use chrono::Duration;
+use std::fs;
+use std::io::prelude::*;
 
-fn main() {
+#[derive(Template)]
+#[template(path = "date.html")]
+struct DateTemplate<'a> {
+    date: &'a String,
+    closest: &'a String,
+    slug: &'a String,
+}
+
+fn main() -> std::io::Result<()> {
     let start_year: i32 = 2020;
     let num_years: i32 = 1;
     let offsets = [0.25, 0.5];
@@ -60,6 +72,19 @@ fn main() {
             }
         };
         println!("{} -> {:?}", current_date, closest);
+        let date_template = DateTemplate {
+            date: &current_date.format("%Y-%m-%d").to_string(),
+            closest: &closest.1,
+            slug: &closest.1.to_lowercase().replace(" ", ""),
+        };
+        let rendered = date_template.render().unwrap();
+        let dir_name = format!("public/{}", current_date.format("%Y-%m-%d"));
+        fs::create_dir_all(&dir_name)?;
+        let path = format!("{}/index.html", &dir_name);
+        let mut file = fs::File::create(&path)?;
+        file.write_all(rendered.as_bytes())?;
         current_date = current_date + Duration::days(1);
     }
+
+    Ok(())
 }
