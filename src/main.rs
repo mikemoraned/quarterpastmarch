@@ -11,6 +11,7 @@ use async_std::task;
 use chrono::prelude::*;
 use chrono::Duration;
 use itertools::Itertools;
+use std::thread;
 
 #[derive(Template)]
 #[template(path = "date.html")]
@@ -85,12 +86,13 @@ fn assign_shortcut_to_date(
     assignments
 }
 
-fn find_closest_shortcut_in_each_year(
-    assignments: &[ShortcutAssignment],
+fn find_closest_shortcut_in_each_year<'a>(
+    assignments: &'a [ShortcutAssignment],
     start_date: Date<Utc>,
     max_date: Date<Utc>,
 ) -> Vec<(Date<Utc>, ShortcutAssignment)> {
-    let mut closest_shortcut_for_dates = Vec::new();
+    let mut all = Vec::new();
+    let mut handles = Vec::new();
     for (year, dates) in date_range(start_date, max_date)
         .into_iter()
         .group_by(|d| d.year())
@@ -100,20 +102,26 @@ fn find_closest_shortcut_in_each_year(
             .iter()
             .filter(|a| a.0.year() == year)
             .collect::<Vec<&ShortcutAssignment>>();
-        find_closest_shortcut(
-            &year_assignments,
-            &dates.collect::<Vec<Date<Utc>>>(),
-            &mut closest_shortcut_for_dates,
-        );
+        let year_dates = dates.collect::<Vec<Date<Utc>>>();
+        handles.push(thread::spawn(|| {
+            find_closest_shortcut(&year_assignments, &year_dates)
+        }));
+        // let mut for_year =
+        //     find_closest_shortcut(&year_assignments, &dates.collect::<Vec<Date<Utc>>>());
+        // all.append(&mut for_year);
     }
-    closest_shortcut_for_dates
+    for handle in handles {
+        let mut for_year = handle.join().unwrap();
+        all.append(&mut for_year);
+    }
+    all
 }
 
 fn find_closest_shortcut(
     assignments: &[&ShortcutAssignment],
     dates: &[Date<Utc>],
-    closest_shortcut_for_dates: &mut Vec<(Date<Utc>, ShortcutAssignment)>,
-) {
+) -> Vec<(Date<Utc>, ShortcutAssignment)> {
+    let mut closest_shortcut_for_dates = Vec::new();
     for date in dates {
         let closest = match assignments.binary_search_by_key(date, |a| a.0) {
             Ok(index) => assignments[index].clone(),
@@ -128,6 +136,7 @@ fn find_closest_shortcut(
         println!("{} -> {:?}", date, closest);
         closest_shortcut_for_dates.push((*date, closest));
     }
+    closest_shortcut_for_dates
 }
 
 async fn render_pages(
