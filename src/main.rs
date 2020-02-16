@@ -10,6 +10,7 @@ use async_std::prelude::*;
 use async_std::task;
 use chrono::prelude::*;
 use chrono::Duration;
+use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 
 #[derive(Template)]
@@ -67,15 +68,6 @@ fn assign_shortcut_to_date(
                         (days_till_year_end.num_days() as f32 * offset).floor() as i64;
                     let date = last_day_of_month + Duration::days(days_offset);
                     let relative_date = format!("{} {}", offset_name, month_name);
-                    println!(
-                        "{} + ({} * {} = {}) = {}, {}",
-                        last_day_of_month,
-                        days_till_year_end,
-                        offset,
-                        days_offset,
-                        date,
-                        relative_date
-                    );
                     assignments.push((date, relative_date));
                 }
             }
@@ -91,6 +83,9 @@ fn find_closest_shortcut_in_each_year(
     max_date: Date<Utc>,
 ) -> Vec<(Date<Utc>, ShortcutAssignment)> {
     let mut closest_shortcut_for_dates = Vec::new();
+    let pb = ProgressBar::new((max_date - start_date).num_days() as u64 + 1);
+    pb.set_style(default_progress_style());
+    pb.set_message("find closest");
     for (year, dates) in date_range(start_date, max_date)
         .into_iter()
         .group_by(|d| d.year())
@@ -105,7 +100,9 @@ fn find_closest_shortcut_in_each_year(
             &dates.collect::<Vec<Date<Utc>>>(),
             &mut closest_shortcut_for_dates,
         );
+        pb.set_position(closest_shortcut_for_dates.len() as u64);
     }
+    pb.finish();
     closest_shortcut_for_dates
 }
 
@@ -125,7 +122,6 @@ fn find_closest_shortcut(
                 }
             }
         };
-        println!("{} -> {:?}", date, closest);
         closest_shortcut_for_dates.push((*date, closest));
     }
 }
@@ -135,6 +131,9 @@ async fn render_pages(
 ) -> std::io::Result<Vec<String>> {
     let mut sitemap_urls = Vec::new();
     let mut spawned = Vec::new();
+    let pb = ProgressBar::new(closest_shortcut_for_dates.len() as u64);
+    pb.set_style(default_progress_style());
+    pb.set_message("render and save");
     for (date, closest) in closest_shortcut_for_dates.iter() {
         spawned.push(task::spawn(render_page(*date, closest.clone())));
         sitemap_urls.push(format!(
@@ -144,12 +143,13 @@ async fn render_pages(
     }
     for s in spawned {
         s.await?;
+        pb.inc(1);
     }
+    pb.finish();
     Ok(sitemap_urls)
 }
 
 async fn render_page(date: Date<Utc>, closest: ShortcutAssignment) -> std::io::Result<()> {
-    println!("{} -> {:?}", date, closest);
     let date_template = DateTemplate {
         date: &date.format("%Y-%m-%d").to_string(),
         closest: &closest.1,
@@ -182,4 +182,9 @@ fn date_range(start_date: Date<Utc>, max_date: Date<Utc>) -> Vec<Date<Utc>> {
         current_date = current_date + Duration::days(1);
     }
     range
+}
+
+fn default_progress_style() -> ProgressStyle {
+    ProgressStyle::default_bar()
+        .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
 }
