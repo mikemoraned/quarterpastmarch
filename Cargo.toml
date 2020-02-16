@@ -1,6 +1,6 @@
 [package]
 name = "quarterpastmarch"
-version = "0.4.1"
+version = "0.5.0"
 authors = ["Mike Moran <mike@houseofmoran.com>"]
 edition = "2018"
 
@@ -11,3 +11,4 @@ chrono = "0.4"
 askama = "0.9"
 itertools = "0.8"
 async-std = "1.5"
+indicatif = "0.14"
