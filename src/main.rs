@@ -1,13 +1,16 @@
 extern crate askama;
+extern crate async_std;
 extern crate chrono;
 extern crate itertools;
 
 use askama::Template;
+use async_std::fs;
+use async_std::io;
+use async_std::prelude::*;
+use async_std::task;
 use chrono::prelude::*;
 use chrono::Duration;
 use itertools::Itertools;
-use std::fs;
-use std::io::prelude::*;
 
 #[derive(Template)]
 #[template(path = "date.html")]
@@ -17,7 +20,7 @@ struct DateTemplate<'a> {
     slug: &'a String,
 }
 
-fn main() -> std::io::Result<()> {
+fn main() -> io::Result<()> {
     let start_year: i32 = 2020;
     let num_years: i32 = 10;
     let offsets = [(0.25, "quarter past"), (0.5, "half past")];
@@ -29,11 +32,14 @@ fn main() -> std::io::Result<()> {
 
     let closest_shortcut_for_dates =
         find_closest_shortcut_in_each_year(&assignments, start_date, max_date);
-    let sitemap_urls = render_pages(closest_shortcut_for_dates)?;
 
-    generate_sitemap(sitemap_urls)?;
+    task::block_on(async {
+        let sitemap_urls = render_pages(closest_shortcut_for_dates).await?;
 
-    Ok(())
+        generate_sitemap(sitemap_urls).await?;
+
+        Ok(())
+    })
 }
 
 type ShortcutAssignment = (Date<Utc>, String);
@@ -124,36 +130,46 @@ fn find_closest_shortcut(
     }
 }
 
-fn render_pages(
+async fn render_pages(
     closest_shortcut_for_dates: Vec<(Date<Utc>, ShortcutAssignment)>,
 ) -> std::io::Result<Vec<String>> {
     let mut sitemap_urls = Vec::new();
+    let mut spawned = Vec::new();
     for (date, closest) in closest_shortcut_for_dates.iter() {
-        println!("{} -> {:?}", date, closest);
-        let date_template = DateTemplate {
-            date: &date.format("%Y-%m-%d").to_string(),
-            closest: &closest.1,
-            slug: &closest.1.to_lowercase().replace(" ", ""),
-        };
-        let rendered = date_template.render().unwrap();
-        let dir_name = format!("public/{}", date.format("%Y-%m-%d"));
-        fs::create_dir_all(&dir_name)?;
-        let path = format!("{}/index.html", &dir_name);
-        let mut file = fs::File::create(&path)?;
-        file.write_all(rendered.as_bytes())?;
-
+        spawned.push(task::spawn(render_page(*date, closest.clone())));
         sitemap_urls.push(format!(
             "https://quarterpastmarch.houseofmoran.io/{}/",
             date.format("%Y-%m-%d")
         ));
     }
+    for s in spawned {
+        s.await?;
+    }
     Ok(sitemap_urls)
 }
 
-fn generate_sitemap(sitemap_urls: Vec<String>) -> std::io::Result<()> {
-    let mut sitemap_file = fs::File::create("public/sitemap.txt")?;
+async fn render_page(date: Date<Utc>, closest: ShortcutAssignment) -> std::io::Result<()> {
+    println!("{} -> {:?}", date, closest);
+    let date_template = DateTemplate {
+        date: &date.format("%Y-%m-%d").to_string(),
+        closest: &closest.1,
+        slug: &closest.1.to_lowercase().replace(" ", ""),
+    };
+    let rendered = date_template.render().unwrap();
+    let dir_name = format!("public/{}", date.format("%Y-%m-%d"));
+    fs::create_dir_all(&dir_name).await?;
+    let path = format!("{}/index.html", &dir_name);
+    let mut file = fs::File::create(&path).await?;
+    file.write_all(rendered.as_bytes()).await?;
+    Ok(())
+}
+
+async fn generate_sitemap(sitemap_urls: Vec<String>) -> std::io::Result<()> {
+    let mut sitemap_file = fs::File::create("public/sitemap.txt").await?;
     for sitemap_url in sitemap_urls {
-        sitemap_file.write_all(format!("{}\n", sitemap_url).as_bytes())?;
+        sitemap_file
+            .write_all(format!("{}\n", sitemap_url).as_bytes())
+            .await?;
     }
     Ok(())
 }
